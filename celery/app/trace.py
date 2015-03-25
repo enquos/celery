@@ -229,6 +229,8 @@ def build_tracer(name, task, loader=None, hostname=None, store_errors=True,
 
         # Traverse the rest of the chain if any,
         # and look for `chord` request attribute
+        if task.request.callbacks is None:
+            return
         callbacks = list(task.request.callbacks)
         while callbacks and any(callbacks):
             callback = callbacks.pop()
