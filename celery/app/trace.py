@@ -206,6 +206,48 @@ def build_tracer(name, task, loader=None, hostname=None, store_errors=True,
             ).apply_async((uuid, ))
         return I, R, I.state, I.retval
 
+    def handle_chord_part_result(task, state, R):
+        """
+        Update chord progress status if the task is monitored by a chord.
+
+        Chord status is updated if:
+        * The task succeeded or failed and its request
+          has the `chord` attribute specified
+        * The task failed and his in a middle of a chain tracked by a chord.
+
+        :param task: The task that has just been fired
+        :param state: Task result state
+        :param R: Task result
+        """
+        if task.request.chord:
+            on_chord_part_return(task, state, R)
+        if state != FAILURE:
+            return
+        # At this point, the task failed.
+        # Code below takes care of calling the chord part result
+        # if the task is in the middle of a chain, monitored by chord.
+
+        # Traverse the rest of the chain if any,
+        # and look for `chord` request attribute
+        callbacks = list(task.request.callbacks)
+        while callbacks and any(callbacks):
+            callback = callbacks.pop()
+            if 'chord' in callback.options:
+                try:
+                    context = Context(
+                        group=callback.options['group_id'],
+                        id=callback.options['task_id'],
+                        chord=callback.options['chord'],
+                        called_directly=False
+                    )
+                    push_request(context)
+                    on_chord_part_return(task, state, R)
+                finally:
+                    pop_request()
+            else:
+                for link in callback.options.get('link', []) or []:
+                    callbacks.append(link)
+
     def trace_task(uuid, args, kwargs, request=None):
         # R      - is the possibly prepared return value.
         # I      - is the Info object.
@@ -292,8 +334,7 @@ def build_tracer(name, task, loader=None, hostname=None, store_errors=True,
 
                 # -* POST *-
                 if state not in IGNORE_STATES:
-                    if task_request.chord:
-                        on_chord_part_return(task, state, R)
+                    handle_chord_part_result(task, state, R)
                     if task_after_return:
                         task_after_return(
                             state, retval, uuid, args, kwargs, None,
