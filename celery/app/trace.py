@@ -234,7 +234,12 @@ def build_tracer(name, task, loader=None, hostname=None, store_errors=True,
         callbacks = list(task.request.callbacks)
         while callbacks and any(callbacks):
             callback = callbacks.pop()
-            if 'chord' in callback.options:
+            is_chord = False
+            if isinstance(callback, dict):
+                is_chord = callback.get('options', {}).get('chord')
+            else:
+                is_chord = 'chord' in callback.options
+            if is_chord:
                 try:
                     context = Context(
                         group=callback.options['group_id'],
@@ -247,7 +252,11 @@ def build_tracer(name, task, loader=None, hostname=None, store_errors=True,
                 finally:
                     pop_request()
             else:
-                for link in callback.options.get('link', []) or []:
+                if isinstance(callback, dict):
+                    links = callback.get('options', {}).get('link', [])
+                else:
+                    links = callback.options.get('link', []) or []
+                for link in links or []:
                     callbacks.append(link)
 
     def trace_task(uuid, args, kwargs, request=None):
