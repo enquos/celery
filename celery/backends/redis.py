@@ -98,10 +98,10 @@ class RedisBackend(KeyValueStoreBackend):
 
         self.connparams['sentinel'] = strtobool(self.connparams.get('sentinel', False))
         # resolve default port
-        if not self.connparams.get('path', '').startswith('/'): # no socket connection
+        if not self.connparams.get('path', '').startswith('/'):  # no socket connection
             if 'port' not in self.connparams:
-                self.connparams['port'] = _get('DB') or (\
-                    RedisBackend.SENTINEL_DEFAULT_PORT \
+                self.connparams['port'] = _get('DB') or (
+                    RedisBackend.SENTINEL_DEFAULT_PORT
                     if self.connparams['sentinel']
                     else RedisBackend.REDIS_DEFAULT_PORT
                 )
