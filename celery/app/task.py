@@ -527,12 +527,17 @@ class Task(object):
                       if an error occurs while executing the task.
 
         :keyword producer: :class:~@amqp.TaskProducer` instance to use.
+
         :keyword add_to_parent: If set to True (default) and the task
             is applied while executing another task, then the result
             will be appended to the parent tasks ``request.children``
             attribute.  Trailing can also be disabled by default using the
             :attr:`trail` attribute
+
         :keyword publisher: Deprecated alias to ``producer``.
+
+        :keyword headers: Message headers to be sent in the
+            task (a :class:`dict`)
 
         :rtype :class:`celery.result.AsyncResult`: if
             :setting:`CELERY_ALWAYS_EAGER` is not set, otherwise
@@ -575,6 +580,7 @@ class Task(object):
             'soft_time_limit': limit_soft,
             'time_limit': limit_hard,
             'reply_to': request.reply_to,
+            'headers': request.headers,
         }
         options.update(
             {'queue': queue} if queue else (request.delivery_info or {})
@@ -600,7 +606,12 @@ class Task(object):
         :keyword countdown: Time in seconds to delay the retry for.
         :keyword eta: Explicit time and date to run the retry at
                       (must be a :class:`~datetime.datetime` instance).
-        :keyword max_retries: If set, overrides the default retry limit.
+        :keyword max_retries: If set, overrides the default retry limit for
+            this execution. Changes to this parameter do not propagate to
+            subsequent task retry attempts. A value of :const:`None`, means
+            "use the default", so if you want infinite retries you would
+            have to set the :attr:`max_retries` attribute of the task to
+            :const:`None` first.
         :keyword time_limit: If set, overrides the default time limit.
         :keyword soft_time_limit: If set, overrides the default soft
                                   time limit.

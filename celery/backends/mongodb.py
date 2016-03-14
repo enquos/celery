@@ -10,6 +10,17 @@ from __future__ import absolute_import
 
 from datetime import datetime
 
+from kombu.syn import detect_environment
+from kombu.utils import cached_property
+from kombu.utils.url import maybe_sanitize_url
+
+from celery import states
+from celery.exceptions import ImproperlyConfigured
+from celery.five import items, string_t
+from celery.utils.timeutils import maybe_timedelta
+
+from .base import BaseBackend
+
 try:
     import pymongo
 except ImportError:  # pragma: no cover
@@ -23,26 +34,17 @@ if pymongo:
 else:                                       # pragma: no cover
     Binary = None                           # noqa
 
-from kombu.syn import detect_environment
-from kombu.utils import cached_property
-
-from celery import states
-from celery.exceptions import ImproperlyConfigured
-from celery.five import items, string_t
-from celery.utils.timeutils import maybe_timedelta
-
-from .base import BaseBackend
-
 __all__ = ['MongoBackend']
 
 
-class Bunch(object):
-
-    def __init__(self, **kw):
-        self.__dict__.update(kw)
-
-
 class MongoBackend(BaseBackend):
+    """MongoDB result backend.
+
+    :raises celery.exceptions.ImproperlyConfigured: if
+        module :mod:`pymongo` is not available.
+
+    """
+
     host = 'localhost'
     port = 27017
     user = None
@@ -57,12 +59,6 @@ class MongoBackend(BaseBackend):
     _connection = None
 
     def __init__(self, app=None, url=None, **kwargs):
-        """Initialize MongoDB backend instance.
-
-        :raises celery.exceptions.ImproperlyConfigured: if
-            module :mod:`pymongo` is not available.
-
-        """
         self.options = {}
         super(MongoBackend, self).__init__(app, **kwargs)
         self.expires = kwargs.get('expires') or maybe_timedelta(
@@ -104,8 +100,13 @@ class MongoBackend(BaseBackend):
             if pymongo.version_tuple >= (3, ):
                 return {'maxPoolSize': self.max_pool_size}
             else:  # pragma: no cover
-                return {'max_pool_size': max_pool_size,
-                        'auto_start_request': False}
+                options = {
+                    'max_pool_size': self.max_pool_size,
+                    'auto_start_request': False
+                }
+                if detect_environment() != 'default':
+                    options['use_greenlets'] = True
+                return options
 
     def _get_connection(self):
         """Connect to the MongoDB server."""
@@ -124,8 +125,6 @@ class MongoBackend(BaseBackend):
                 url = 'mongodb://{0}:{1}'.format(url, self.port)
             if url == 'mongodb://':
                 url = url + 'localhost'
-            if detect_environment() != 'default':
-                self.options['use_greenlets'] = True
             self._connection = MongoClient(host=url, **self.options)
 
         return self._connection
@@ -199,11 +198,11 @@ class MongoBackend(BaseBackend):
         self.collection.remove({'_id': group_id})
 
     def _forget(self, task_id):
-        """
-        Remove result from MongoDB.
+        """Remove result from MongoDB.
 
-        :raises celery.exceptions.OperationsError: if the task_id could not be
-                                                   removed.
+        :raises celery.exceptions.OperationsError:
+            if the task_id could not be removed.
+
         """
         # By using safe=True, this will wait until it receives a response from
         # the server.  Likewise, it will raise an OperationsError if the
@@ -246,3 +245,20 @@ class MongoBackend(BaseBackend):
         # in the background. Once completed cleanup will be much faster
         collection.ensure_index('date_done', background='true')
         return collection
+
+    def as_uri(self, include_password=False):
+        """Return the backend as an URI.
+
+        :keyword include_password: Censor passwords.
+
+        """
+        if not self.url:
+            return 'mongodb://'
+        if include_password:
+            return self.url
+
+        if ',' not in self.url:
+            return maybe_sanitize_url(self.url)
+
+        uri1, remainder = self.url.split(',', 1)
+        return ','.join([maybe_sanitize_url(uri1), remainder])
